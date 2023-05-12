@@ -1,24 +1,28 @@
 <template>
   <div
     class="table_main"
+    ref="scrollTable"
     :style="[
       width ? { width: width + 'px' } : {},
       height ? { height: height + 'px' } : {},
     ]"
+    v-if="table.rank <= 2"
   >
     <div class="tHeader">
-      <Th
-        v-for="item in props.columns"
-        :key="item.prop"
-        class="th"
-        :width="item.width"
-        :align="item.align ?? 'left'"
-      >
-        {{ item.title }}
-      </Th>
+      <Th :column="props.columns" />
     </div>
-    <div class="tBody" @dragover="draging" @dragend="drop">
-      <TBody v-model="props.modelValue" :columns="columns" />
+    <div
+      class="tBody"
+      @dragover="draging"
+      @dragend="drop"
+      v-bind:style="{ width: scrollWidth + 'px' }"
+    >
+      <TBody
+        v-model="props.modelValue"
+        v-model:columns="props.columns"
+        @rowClick="rowClick"
+        @onTdChange="onTdChange"
+      />
     </div>
   </div>
 </template>
@@ -26,9 +30,8 @@
 <script setup>
 import Th from "./table/Th.vue";
 import TBody from "./table/TBody.vue";
-import { ref, reactive, onMounted, provide } from "vue";
+import { ref, reactive, onMounted, provide, useAttrs, watch, nextTick } from "vue";
 import dragTableMethods from "./dragTableMethods";
-
 const props = defineProps({
   custom_field: {
     type: Object,
@@ -45,7 +48,8 @@ const props = defineProps({
     },
   },
   onlySameLevelCanDrag: String || Number,
-  tdheight: {
+  //单元格高度
+  tdHeight: {
     type: Number,
     default: 30,
   },
@@ -64,14 +68,17 @@ const props = defineProps({
     type: Number || String,
     default: 0,
   },
+  //是否显示表格边框
   border: {
     type: Boolean,
     default: true,
   },
+  //表头
   columns: {
     type: Array,
     default: () => [],
   },
+  //表格绑定数据
   modelValue: {
     type: Array,
     default: () => [],
@@ -79,19 +86,35 @@ const props = defineProps({
   hightRowChange: String,
   beforeDragOver: Function,
 });
-const emit = defineEmits();
+const emits = defineEmits(["rowClick", "onTdChange"]);
 provide("custom_field", props.custom_field);
 provide("border", props.border);
 provide("rowMoveSort", props.rowMoveSort);
+provide("tdHeight", props.tdHeight);
+provide("modelValue", props.modelValue);
+const scrollTable = ref();
 const table = reactive({
   isDraing: false,
+  rank: 0,
   dragX: "",
   dragY: "",
   targetId: "",
   whereInsert: "",
 });
-onMounted(() => {});
-
+const scrollWidth = ref(0);
+const rowClick = (e) => {
+  emits("rowClick", e);
+};
+const onTdChange = (e) => {
+  emits("onTdChange", e);
+};
+const initTrWidth = () => {
+  scrollWidth.value = 0;
+  const child = document.querySelector(".tHeader").children;
+  for (let i = 0; i < child.length; i++) {
+    scrollWidth.value += (child[i].clientWidth ?? 0) + 1;
+  }
+};
 // 查找匹配的行，处理拖拽样式
 const filter = (x, y) => {
   var rows = document.querySelectorAll(".tree-row");
@@ -245,8 +268,8 @@ const resetTreeData = () => {
   }
   pushData(curList, newList);
   resetOrder(newList);
-  console.log(newList);
-  emit("update:modelValue", newList);
+  emits("update:modelValue", newList);
+  emits("treeSort");
 };
 const draging = (e) => {
   e.preventDefault();
@@ -278,9 +301,61 @@ const drop = () => {
     }
   }
 };
+watch(
+  () => props.columns,
+  (e) => {
+    nextTick(() => {
+      initTrWidth();
+    });
+  }
+);
+
+//监听fixed列，动态添加样式
+const fixedShadowListener = () => {
+  const stickyHeader = document.querySelectorAll(".fixedRight")[0];
+  const stickyRows = document.querySelectorAll(".fixedRight");
+  const containerElement = stickyHeader.parentElement;
+  const fixedPosition = stickyHeader.getAttribute("fixed");
+  if (!fixedPosition) return;
+  if (fixedPosition === "right") {
+    stickyRows.forEach((res) => {
+      res.classList.add("sticky-l-shadow");
+    });
+  }
+  scrollTable.value.addEventListener("scroll", () => {
+    const containerRect = containerElement.getBoundingClientRect();
+    const stickyRect = stickyHeader.getBoundingClientRect();
+    const distanceRight = containerRect.right - stickyRect.width;
+    if (fixedPosition === "right") {
+      if (distanceRight > 0) {
+        stickyRows.forEach((res) => {
+          res.classList.add("sticky-l-shadow");
+        });
+      } else {
+        stickyRows.forEach((res) => {
+          res.classList.remove("sticky-l-shadow");
+        });
+      }
+    }
+  });
+};
+onMounted(() => {
+  table.rank = dragTableMethods.calculationLevel(props.columns);
+  if (table.rank > 2) {
+    console.warn("抱歉，目前仅支持到二级菜单！");
+  }
+  initTrWidth();
+
+  fixedShadowListener();
+});
 </script>
 <style scoped lang="scss">
+:deep(.sticky-l-shadow) {
+  border-left: 1px solid #fff;
+  box-shadow: -2px 0 2px rgba($color: rgb(147, 147, 147), $alpha: 0.1);
+}
 .table_main {
+  position: relative;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -289,6 +364,9 @@ const drop = () => {
   .tHeader {
     width: 100%;
     display: flex;
+  }
+  .tBody {
+    flex: 1;
   }
 }
 </style>

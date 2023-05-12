@@ -9,7 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "drag-drop-tree-table": "^1.1.1",
     "element-plus": "^2.2.30",
     "vue": "^3.2.45"
   },
